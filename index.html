@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nano Dashboard (XNO) — View Only</title>
+  <title>Nano Dashboard (XNO)</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
@@ -59,16 +59,19 @@
     }
     .tx-link:hover { text-decoration: underline; }
     .badge-type { font-size: 0.75rem; }
-    #priceBadge {
-      background: #17a2b8;
-      padding: 0.5rem 1.5rem;
-      border-radius: 2rem;
-      font-weight: 500;
+    /* Price & market info */
+    .price-metric {
+      background: rgba(255,255,255,0.06);
+      border-radius: 1rem;
+      padding: 0.4rem 1.2rem;
       display: inline-flex;
       align-items: center;
       gap: 0.4rem;
-      color: #fff;
+      margin: 0.2rem;
+      font-weight: 500;
     }
+    .change-positive { color: #4caf50; }
+    .change-negative { color: #f44336; }
     /* Faucet buttons */
     .faucet-btn {
       background: rgba(255,255,255,0.1);
@@ -146,14 +149,28 @@
 <body>
 <div class="container py-4">
   <h1 class="text-center mb-2"><i class="fab fa-nano"></i> Nano Dashboard</h1>
-  <p class="text-center text-muted-white mb-2">View‑only · Track balances, transactions & price</p>
+  <p class="text-center text-muted-white mb-2">Track balances, transactions & market data</p>
 
-  <!-- Live Price (always visible) -->
-  <div class="text-center mb-2">
-    <span id="priceBadge">
-      <i class="fas fa-dollar-sign"></i> 
-      <span id="priceLiveDisplay">Loading price...</span>
-    </span>
+  <!-- Market Data from CoinGecko (always visible) -->
+  <div class="text-center mb-3">
+    <div class="d-flex flex-wrap justify-content-center align-items-center gap-2">
+      <span class="price-metric" id="priceBadge">
+        <i class="fas fa-dollar-sign"></i> 
+        <span id="priceLiveDisplay">Loading...</span>
+      </span>
+      <span class="price-metric" id="changeBadge">
+        <i class="fas fa-chart-line"></i> 24h: 
+        <span id="change24hDisplay">...</span>
+      </span>
+      <span class="price-metric">
+        <i class="fas fa-coins"></i> M.Cap: 
+        <span id="marketCapDisplay">...</span>
+      </span>
+      <span class="price-metric">
+        <i class="fas fa-exchange-alt"></i> Vol: 
+        <span id="volumeDisplay">...</span>
+      </span>
+    </div>
   </div>
 
   <!-- Nano Faucets -->
@@ -213,9 +230,9 @@
       </div>
       <div class="col-md-6 col-lg-3">
         <div class="card p-3 text-center h-100">
-          <h5><i class="fas fa-chart-line"></i> Price (live)</h5>
-          <h2 class="fw-bold" id="priceDashboardDisplay">...</h2>
-          <span class="text-muted-white">USD</span>
+          <h5><i class="fas fa-chart-line"></i> Value (USD)</h5>
+          <h2 class="fw-bold" id="valueDisplay">0.00</h2>
+          <span class="text-muted-white">$</span>
         </div>
       </div>
       <div class="col-md-6 col-lg-3">
@@ -283,6 +300,7 @@
     const RPC_URL = 'https://rpc.nano.to';
     const STORAGE_KEY = 'nano_wallet_list';
     const DONATE_ADDRESS = 'nano_3k41y61xxgmre13exyk3q69k78bxxwhmrmncezt49jg1sok18xo64jeff5hk';
+    let currentPrice = 0; // lưu giá hiện tại để tính value
 
     // RPC helper
     async function nanoRpc(action, params = {}) {
@@ -315,22 +333,60 @@
       return addr ? `${addr.slice(0, l)}...${addr.slice(-l)}` : '';
     }
 
-    async function fetchPrice() {
+    // ── CoinGecko API: lấy giá + market data (dùng endpoint /coins/nano) ──
+    async function fetchMarketData() {
       try {
-        const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=nano&vs_currencies=usd');
+        const res = await fetch('https://api.coingecko.com/api/v3/coins/nano?localization=false&tickers=false&community_data=false&developer_data=false');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        return data.nano?.usd || null;
+        const market = data.market_data;
+        currentPrice = market.current_price.usd || 0;
+        return {
+          price: currentPrice,
+          change24h: market.price_change_percentage_24h || 0,
+          marketCap: market.market_cap.usd || 0,
+          volume24h: market.total_volume.usd || 0
+        };
       } catch (e) {
+        console.error('CoinGecko error:', e);
         return null;
       }
     }
 
-    async function updatePriceDisplay() {
-      const price = await fetchPrice();
-      const text = price ? `$${price}` : 'Unavailable';
-      document.getElementById('priceLiveDisplay').textContent = text;
-      const dashEl = document.getElementById('priceDashboardDisplay');
-      if (dashEl) dashEl.textContent = text;
+    function formatCompact(num) {
+      if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
+      if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
+      if (num >= 1e3) return (num / 1e3).toFixed(2) + 'K';
+      return num.toFixed(2);
+    }
+
+    async function updateMarketDisplay() {
+      const data = await fetchMarketData();
+      if (!data) {
+        document.getElementById('priceLiveDisplay').textContent = 'Unavailable';
+        document.getElementById('change24hDisplay').textContent = '--';
+        document.getElementById('marketCapDisplay').textContent = '--';
+        document.getElementById('volumeDisplay').textContent = '--';
+        return;
+      }
+      document.getElementById('priceLiveDisplay').textContent = '$' + data.price;
+      const changeEl = document.getElementById('change24hDisplay');
+      changeEl.textContent = data.change24h.toFixed(2) + '%';
+      changeEl.className = data.change24h >= 0 ? 'change-positive' : 'change-negative';
+      document.getElementById('marketCapDisplay').textContent = '$' + formatCompact(data.marketCap);
+      document.getElementById('volumeDisplay').textContent = '$' + formatCompact(data.volume24h);
+
+      // Cập nhật value nếu dashboard đang hiển thị
+      updateBalanceValue();
+    }
+
+    function updateBalanceValue() {
+      const balanceText = document.getElementById('balanceDisplay').textContent;
+      const balance = parseFloat(balanceText);
+      if (!isNaN(balance) && currentPrice > 0) {
+        const value = balance * currentPrice;
+        document.getElementById('valueDisplay').textContent = value.toFixed(2);
+      }
     }
 
     // Load account data
@@ -366,6 +422,8 @@
       document.getElementById('pendingDisplay').textContent = rawToNano(info.pending || '0');
       document.getElementById('blockCountDisplay').textContent = info.block_count || '0';
 
+      updateBalanceValue();
+
       const addrEl = document.getElementById('addressFull');
       addrEl.innerHTML = `
         <span>${address}</span>
@@ -396,7 +454,7 @@
         correctLevel: QRCode.CorrectLevel.M
       });
 
-      await updatePriceDisplay();
+      // Không cần gọi updatePriceDisplay vì đã có updateMarketDisplay chạy nền
 
       const tbody = document.getElementById('historyTableBody');
       const noHist = document.getElementById('noHistory');
@@ -431,7 +489,7 @@
       addWalletToList(address);
     }
 
-    // Wallet list management
+    // Wallet list management (giữ nguyên)
     function getSavedWallets() {
       const stored = localStorage.getItem(STORAGE_KEY);
       return stored ? JSON.parse(stored) : [];
@@ -520,10 +578,13 @@
 
     // Init
     window.addEventListener('DOMContentLoaded', () => {
-      updatePriceDisplay();
+      // Lấy dữ liệu market từ CoinGecko
+      updateMarketDisplay();
+      // Cập nhật lại mỗi 60 giây
+      setInterval(updateMarketDisplay, 60000);
+
       renderWalletList();
 
-      // Copy donate address
       document.getElementById('copyDonateBtn').addEventListener('click', () => {
         navigator.clipboard.writeText(DONATE_ADDRESS).then(() => alert('Donate address copied!'));
       });
