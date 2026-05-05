@@ -458,13 +458,14 @@
           const amount = rawToNano(tx.amount || '0');
           let counterparty = tx.type === 'send' ? (tx.destination || tx.account || '?') : (tx.link_as_account || tx.account || '?');
           const hashShort = shortAddress(tx.hash, 5);
+          // ĐÃ SỬA LINK Ở ĐÂY: dùng nanexplorer.com thay vì nanoblockexplorer.com
           const row = `
             <tr>
               <td><span class="badge ${badgeClass} badge-type">${type}</span></td>
               <td><span title="${counterparty}">${shortAddress(counterparty, 8)}</span></td>
               <td class="fw-bold">${amount}</td>
               <td>${tx.height || '?'}</td>
-              <td><a class="tx-link" href="https://nanoblockexplorer.com/block/${tx.hash}" target="_blank" rel="noopener">${hashShort} <i class="fas fa-external-link-alt fa-xs"></i></a></td>
+              <td><a class="tx-link" href="https://nanexplorer.com/nano/blocks/${tx.hash}" target="_blank" rel="noopener">${hashShort} <i class="fas fa-external-link-alt fa-xs"></i></a></td>
             </tr>`;
           tbody.insertAdjacentHTML('beforeend', row);
         });
@@ -559,7 +560,7 @@
       const data = await loadAccount(address);
       await renderDashboard(data, address);
 
-      // Clear input after successful load (because it's now saved in the list)
+      // Clear input after successful load
       input.value = '';
     }
 
@@ -578,7 +579,7 @@
       if (savedWallets.length > 0) {
         const lastAddr = savedWallets[savedWallets.length - 1];
         document.getElementById('addressInput').value = lastAddr;
-        handleLoad(); // This will also clear the input after loading
+        handleLoad();
       }
 
       document.getElementById('loadBtn').addEventListener('click', handleLoad);
